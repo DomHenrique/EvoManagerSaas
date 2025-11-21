@@ -1,0 +1,46 @@
+version: '3.8'
+
+services:
+  app:
+    build: .
+    ports:
+      - "3000:3000"
+    environment:
+      - NODE_ENV=production
+    env_file:
+      - .env
+    restart: unless-stopped
+    depends_on:
+      - db
+    networks:
+      - evomanager-network
+
+  db:
+    image: postgres:15-alpine
+    environment:
+      POSTGRES_DB: evomanager
+      POSTGRES_USER: evomanager_user
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-evomanager_password}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./init.sql:/docker-entrypoint-initdb.d/init.sql
+    ports:
+      - "5432:5432"
+    restart: unless-stopped
+    networks:
+      - evomanager-network
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    restart: unless-stopped
+    networks:
+      - evomanager-network
+
+volumes:
+  postgres_data:
+
+networks:
+  evomanager-network:
+    driver: bridge
