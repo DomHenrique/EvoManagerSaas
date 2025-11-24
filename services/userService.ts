@@ -66,19 +66,19 @@ export const deleteAppUser = async (userId: string): Promise<void> => {
 };
 
 // --- Instance assignment management ---
+// NOTE: These functions are commented out because the 'user_instances' table doesn't exist
+// If you need instance assignment functionality, create the table first with a migration
+
+/*
 export const assignInstanceToUser = async (userId: string, instanceName: string): Promise<void> => {
-
-
   await supabase.from('user_instances').upsert([{ user_id: userId, instance_name: instanceName, can_view: true }]);
 };
 
 export const revokeInstanceFromUser = async (userId: string, instanceName: string): Promise<void> => {
-
   await supabase.from('user_instances').delete().match({ user_id: userId, instance_name: instanceName });
 };
 
 export const fetchUserInstances = async (userId: string) => {
-
   const { data, error } = await supabase.from('user_instances').select('*').eq('user_id', userId);
   if (error) {
     console.error('Error fetching user instances', error);
@@ -88,7 +88,6 @@ export const fetchUserInstances = async (userId: string) => {
 };
 
 export const fetchUsersWithAssignments = async () => {
-
   // Join profiles with user_instances
   const { data, error } = await supabase
     .from('profiles')
@@ -98,4 +97,26 @@ export const fetchUsersWithAssignments = async () => {
     return [];
   }
   return data;
+};
+*/
+
+// Temporary placeholder functions to prevent import errors
+export const assignInstanceToUser = async (userId: string, instanceName: string): Promise<void> => {
+  console.warn('assignInstanceToUser: user_instances table does not exist. Create migration first.');
+  return Promise.resolve();
+};
+
+export const revokeInstanceFromUser = async (userId: string, instanceName: string): Promise<void> => {
+  console.warn('revokeInstanceFromUser: user_instances table does not exist. Create migration first.');
+  return Promise.resolve();
+};
+
+export const fetchUserInstances = async (userId: string) => {
+  console.warn('fetchUserInstances: user_instances table does not exist. Create migration first.');
+  return [];
+};
+
+export const fetchUsersWithAssignments = async () => {
+  console.warn('fetchUsersWithAssignments: user_instances table does not exist. Create migration first.');
+  return [];
 };

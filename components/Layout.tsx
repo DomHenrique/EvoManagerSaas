@@ -1,7 +1,7 @@
 
 import React from 'react';
 import { Link, useLocation } from 'react-router-dom';
-import { LayoutDashboard, Server, MessageSquare, Settings, LogOut, Menu, X, Activity, Users, Shield } from 'lucide-react';
+import { LayoutDashboard, Server, MessageSquare, Settings, LogOut, Menu, X, Activity, Users, Shield, Send } from 'lucide-react';
 
 import { supabase } from '../services/supabase';
 
@@ -23,6 +23,7 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
     { icon: Server, label: 'Instances', path: '/instances' },
     { icon: Users, label: 'Groups', path: '/groups' },
     { icon: Shield, label: 'Users', path: '/users' },
+    { icon: Send, label: 'Messages', path: '/messages' },
     { icon: MessageSquare, label: 'AI Agent Chat', path: '/chat' },
     { icon: Settings, label: 'Settings', path: '/settings' },
   ];

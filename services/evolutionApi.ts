@@ -938,6 +938,157 @@ export const sendMediaMessage = async (
   }
 };
 
+export const sendButtonMessage = async (
+  instanceName: string,
+  number: string,
+  text: string,
+  buttons: Array<{ displayText: string }>
+): Promise<any> => {
+  requireNonEmpty(instanceName, 'instanceName');
+  requireNonEmpty(number, 'number');
+  requireNonEmpty(text, 'text');
+  requireArray(buttons, 'buttons');
+
+  const body = {
+    number,
+    options: {
+      delay: 1000,
+      presence: 'composing'
+    },
+    buttonMessage: {
+      text,
+      buttons: buttons.map((btn, index) => ({
+        buttonId: `btn_${index + 1}`,
+        buttonText: {
+          displayText: btn.displayText
+        },
+        type: 1
+      }))
+    }
+  };
+
+  try {
+    return await apiClient.post(`/message/sendButtons/${instanceName}`, body);
+  } catch (error) {
+    ApiLogger.error('sendButtonMessage', 'Failed to send button message', error);
+    throw error;
+  }
+};
+
+export const sendListMessage = async (
+  instanceName: string,
+  number: string,
+  title: string,
+  items: Array<{ title: string; description?: string }>
+): Promise<any> => {
+  requireNonEmpty(instanceName, 'instanceName');
+  requireNonEmpty(number, 'number');
+  requireNonEmpty(title, 'title');
+  requireArray(items, 'items');
+
+  const body = {
+    number,
+    options: {
+      delay: 1000,
+      presence: 'composing'
+    },
+    listMessage: {
+      title,
+      description: 'Selecione uma opção',
+      buttonText: 'Ver opções',
+      footerText: '',
+      sections: [
+        {
+          title: 'Opções',
+          rows: items.map((item, index) => ({
+            rowId: `row_${index + 1}`,
+            title: item.title,
+            description: item.description || ''
+          }))
+        }
+      ]
+    }
+  };
+
+  try {
+    return await apiClient.post(`/message/sendList/${instanceName}`, body);
+  } catch (error) {
+    ApiLogger.error('sendListMessage', 'Failed to send list message', error);
+    throw error;
+  }
+};
+
+export const sendLocationMessage = async (
+  instanceName: string,
+  number: string,
+  latitude: number,
+  longitude: number,
+  name?: string
+): Promise<any> => {
+  requireNonEmpty(instanceName, 'instanceName');
+  requireNonEmpty(number, 'number');
+
+  if (typeof latitude !== 'number' || typeof longitude !== 'number') {
+    throw new Error('Latitude and longitude must be numbers');
+  }
+
+  const body = {
+    number,
+    options: {
+      delay: 1000,
+      presence: 'composing'
+    },
+    locationMessage: {
+      latitude,
+      longitude,
+      name: name || 'Localização',
+      address: ''
+    }
+  };
+
+  try {
+    return await apiClient.post(`/message/sendLocation/${instanceName}`, body);
+  } catch (error) {
+    ApiLogger.error('sendLocationMessage', 'Failed to send location message', error);
+    throw error;
+  }
+};
+
+export const sendContactMessage = async (
+  instanceName: string,
+  number: string,
+  contactName: string,
+  contactPhone: string
+): Promise<any> => {
+  requireNonEmpty(instanceName, 'instanceName');
+  requireNonEmpty(number, 'number');
+  requireNonEmpty(contactName, 'contactName');
+  requireNonEmpty(contactPhone, 'contactPhone');
+
+  const body = {
+    number,
+    options: {
+      delay: 1000,
+      presence: 'composing'
+    },
+    contactMessage: [
+      {
+        fullName: contactName,
+        wuid: contactPhone,
+        phoneNumber: contactPhone,
+        organization: ''
+      }
+    ]
+  };
+
+  try {
+    return await apiClient.post(`/message/sendContact/${instanceName}`, body);
+  } catch (error) {
+    ApiLogger.error('sendContactMessage', 'Failed to send contact message', error);
+    throw error;
+  }
+};
+
 // ============================================================================
 // UTILITY FUNCTIONS
 // ============================================================================

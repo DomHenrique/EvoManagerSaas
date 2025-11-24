@@ -8,6 +8,7 @@ import Instances from './pages/Instances';
 import Groups from './pages/Groups';
 import UsersPage from './pages/Users';
 import Chat from './pages/Chat';
+import Messages from './pages/Messages';
 import Login from './pages/Login';
 import Settings from './pages/Settings';
 
@@ -54,6 +55,7 @@ const App: React.FC = () => {
           <Route path="/groups" element={<Groups />} />
           <Route path="/users" element={<UsersPage />} />
           <Route path="/chat" element={<Chat />} />
+          <Route path="/messages" element={<Messages />} />
           <Route path="/settings" element={<Settings />} />
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>

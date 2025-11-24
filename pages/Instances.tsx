@@ -2,7 +2,8 @@
  * 🌟 Instances Page — Refatorada com:
  * - Tipagem 100% segura (sem any/alert/@ts-ignore)
  * - Feedback visual elegante (notificações)
- * - Atualização reativa de instâncias
+ * - Atualização reativa de instâncias via banco de dados
+ * - Sincronização periódica com Evolution API
  * - Suporte a todos os modos de conexão (QR, pairingCode)
  * - Copiar pairingCode para celular sem câmera
  * - Prevenção de ações simultâneas
@@ -15,12 +16,20 @@ import {
   Plus, Power, Trash2, Smartphone, QrCode, Loader2, Key, Copy, Check, X 
 } from 'lucide-react';
 import { 
-  fetchInstances, 
-  createInstance, 
-  deleteInstance, 
+  createInstance as createInstanceAPI, 
+  deleteInstance as deleteInstanceAPI, 
   connectInstance, 
   logoutInstance 
 } from '../services/evolutionApi';
+import { 
+  getInstances,
+  saveInstance,
+  deleteInstance as deleteInstanceDB,
+  syncInstancesFromAPI,
+  startPeriodicSync,
+  stopPeriodicSync
+} from '../services/instanceService';
+import { supabase } from '../services/supabase';
 import { EvoInstance } from '../types';
 
 // Utility para extrair inicial do nome da instância
@@ -102,18 +111,57 @@ const Instances: React.FC = () => {
   const loadInstances = useCallback(async () => {
     setIsLoading(true);
     try {
-      const data = await fetchInstances();
+      // Get current user
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) {
+        showNotification('User not authenticated', 'error');
+        return;
+      }
+
+      // Load instances from database
+      const data = await getInstances(user.id);
       setInstances(data);
     } catch (error) {
       console.error('Failed to load instances:', error);
-      showNotification('Failed to load instances. Check your API configuration.', 'error');
+      showNotification('Failed to load instances from database.', 'error');
     } finally {
       setIsLoading(false);
     }
   }, [showNotification]);
 
   useEffect(() => {
-    loadInstances();
+    let mounted = true;
+
+    const initializeInstances = async () => {
+      // Get current user
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user || !mounted) return;
+
+      // Load instances from database first (fast)
+      await loadInstances();
+
+      // Trigger initial sync from API (updates database)
+      try {
+        await syncInstancesFromAPI(user.id);
+        // Reload after sync to show updated data
+        if (mounted) {
+          await loadInstances();
+        }
+      } catch (error) {
+        console.error('Initial sync failed:', error);
+      }
+
+      // Start periodic sync (every 60 seconds)
+      startPeriodicSync(user.id, 60000);
+    };
+
+    initializeInstances();
+
+    // Cleanup: stop periodic sync when component unmounts
+    return () => {
+      mounted = false;
+      stopPeriodicSync();
+    };
   }, [loadInstances]);
 
   // ============================================================================
@@ -135,14 +183,34 @@ const Instances: React.FC = () => {
 
     setIsCreating(true);
     try {
-      await createInstance({
+      // Get current user
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) {
+        showNotification('User not authenticated', 'error');
+        return;
+      }
+
+      // Create instance via Evolution API
+      await createInstanceAPI({
         instanceName: cleanName,
         token: newInstanceToken.trim() || undefined,
         integration: 'WHATSAPP-BAILEYS',
       });
 
-      // Refresh instances from API to get accurate data
+      // Save to database immediately
+      await saveInstance(user.id, {
+        instanceName: cleanName,
+        status: 'close',
+        integration: 'WHATSAPP-BAILEYS',
+      });
+
+      // Refresh instances from database
       await loadInstances();
+
+      // Trigger immediate sync to get latest status
+      syncInstancesFromAPI(user.id).catch(err => 
+        console.error('Background sync failed:', err)
+      );
 
       showNotification(`Instance "${cleanName}" created successfully!`, 'success');
       setIsModalOpen(false);
@@ -169,9 +237,22 @@ const Instances: React.FC = () => {
     }
 
     try {
-      await deleteInstance(name);
-      // Refresh instances from API to get accurate data
+      // Get current user
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) {
+        showNotification('User not authenticated', 'error');
+        return;
+      }
+
+      // Delete from Evolution API
+      await deleteInstanceAPI(name);
+      
+      // Delete from database
+      await deleteInstanceDB(user.id, name);
+      
+      // Refresh instances from database
       await loadInstances();
+      
       showNotification(`Instance "${name}" deleted.`, 'info');
     } catch (error) {
       console.error('Delete instance failed:', error);
@@ -190,8 +271,12 @@ const Instances: React.FC = () => {
       // - { status: "open", instance: {...} } → Já conectado
 
       if (result.status === 'success' && result.instance?.status === 'open') {
-        // Já está aberto - refresh from API to ensure consistent state
-        await loadInstances();
+        // Get current user and trigger sync
+        const { data: { user } } = await supabase.auth.getUser();
+        if (user) {
+          await syncInstancesFromAPI(user.id);
+          await loadInstances();
+        }
         showNotification(`"${name}" is already connected.`, 'info');
         return;
       }
@@ -226,14 +311,21 @@ const Instances: React.FC = () => {
   }, [showNotification, loadInstances]);
 
   const handleLogout = useCallback(async (name: string) => {
-    if (!confirm(`Disconnect WhatsApp session for "${name}"?\nYou’ll need to reconnect via QR.`)) {
+    if (!confirm(`Disconnect WhatsApp session for "${name}"?\nYou'll need to reconnect via QR.`)) {
       return;
     }
 
     try {
+      // Logout via Evolution API
       await logoutInstance(name);
-      // Refresh instances from API to get accurate data
-      await loadInstances();
+      
+      // Get current user and trigger immediate sync
+      const { data: { user } } = await supabase.auth.getUser();
+      if (user) {
+        await syncInstancesFromAPI(user.id);
+        await loadInstances();
+      }
+      
       showNotification(`"${name}" disconnected.`, 'info');
     } catch (error) {
       console.error('Logout instance failed:', error);

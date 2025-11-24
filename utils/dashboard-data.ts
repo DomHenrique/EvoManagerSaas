@@ -241,9 +241,8 @@ export const fetchAllDashboardData = async (userId?: string) => {
 
     // If Supabase data is not available, fetch directly from Evolution API
     console.log('Supabase data not available, fetching directly from Evolution API');
-    const { fetchDashboardStats, fetchMessageMetrics } = await import('../test-dashboard-data');
 
-    const evolutionStats = await fetchDashboardStats();
+    const evolutionStats = await fetchEvolutionDashboardStats();
     const evolutionMetrics = await fetchMessageMetrics();
 
     return {
@@ -256,9 +255,8 @@ export const fetchAllDashboardData = async (userId?: string) => {
     // Try to fetch directly from Evolution API as fallback
     try {
       console.log('Trying fallback to Evolution API');
-      const { fetchDashboardStats, fetchMessageMetrics } = await import('../test-dashboard-data');
 
-      const evolutionStats = await fetchDashboardStats();
+      const evolutionStats = await fetchEvolutionDashboardStats();
       const evolutionMetrics = await fetchMessageMetrics();
 
       return {
