@@ -95,6 +95,8 @@ const Messages: React.FC = () => {
   const [recipient, setRecipient] = useState('');
   const [selectedGroup, setSelectedGroup] = useState('');
   const [selectedParticipant, setSelectedParticipant] = useState('');
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [sendProgress, setSendProgress] = useState('');
   const [sending, setSending] = useState(false);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -162,8 +164,12 @@ const Messages: React.FC = () => {
   };
 
   const loadInstances = async () => {
+    console.log('[LoadInstances] Fetching instances...');
     const { data: { user } } = await supabase.auth.getUser();
-    if (!user) return;
+    if (!user) {
+      console.warn('[LoadInstances] No user found.');
+      return;
+    }
 
     const { data, error } = await supabase
       .from('instances')
@@ -172,11 +178,21 @@ const Messages: React.FC = () => {
       .eq('status', 'open');
 
     if (error) {
-      console.error('Error loading instances:', error);
+      console.error('[LoadInstances] Error loading instances:', error);
       return;
     }
 
-    setInstances(data || []);
+    if (!data) {
+      console.warn('[LoadInstances] Data is null.');
+      setInstances([]);
+    } else {
+      console.log(`[LoadInstances] Found ${data.length} active instances.`);
+      // Log the first instance to check its structure
+      if (data.length > 0) {
+        console.log('[LoadInstances] First instance structure:', data[0]);
+      }
+      setInstances(data || []);
+    }
   };
 
   const loadGroupsAndParticipants = async (instanceName: string) => {
@@ -232,78 +248,91 @@ const Messages: React.FC = () => {
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) return;
 
-    let content: any = {};
-    let finalMediaUrl = mediaUrl;
+    setIsSubmitting(true);
+    console.log('[CreateTemplate] Start', { editingTemplate: !!editingTemplate });
 
-    // Upload file if present
-    if (templateType === 'media' && mediaFile) {
-      try {
-        finalMediaUrl = await uploadMediaToSupabase(mediaFile);
-      } catch (error) {
-        console.error('Error uploading file:', error);
-        alert('Erro ao fazer upload do arquivo');
-        return;
+    try {
+      let content: any = {};
+      let finalMediaUrl = mediaUrl;
+
+      // Upload file if present
+      if (templateType === 'media' && mediaFile) {
+        try {
+          console.log('[CreateTemplate] Uploading media file...');
+          finalMediaUrl = await uploadMediaToSupabase(mediaFile);
+          console.log('[CreateTemplate] Media uploaded successfully', { url: finalMediaUrl });
+        } catch (error) {
+          console.error('Error uploading file:', error);
+          alert('Erro ao fazer upload do arquivo');
+          return; // Return here because we don't want to proceed
+        }
       }
-    }
 
-    switch (templateType) {
-      case 'text':
-        content = { text: textContent };
-        break;
-      case 'media':
-        content = { url: finalMediaUrl, mediaType, caption };
-        break;
-      case 'button':
-        content = { text: textContent, buttons: buttons.filter(b => b.text.trim()) };
-        break;
-      case 'list':
-        content = { 
-          title: listTitle, 
-          items: listItems.filter(i => i.title.trim()) 
-        };
-        break;
-      case 'location':
-        content = { latitude, longitude, name: locationName };
-        break;
-      case 'contact':
-        content = { name: contactName, phone: contactPhone };
-        break;
-    }
-
-    const template = {
-      name: templateName,
-      type: templateType,
-      content,
-      user_id: user.id,
-      sent_count: 0
-    };
-
-    if (editingTemplate) {
-      const { error } = await supabase
-        .from('message_templates')
-        .update({ ...template, updated_at: new Date().toISOString() })
-        .eq('id', editingTemplate.id);
-
-      if (error) {
-        console.error('Error updating template:', error);
-        alert('Erro ao atualizar template');
-        return;
+      switch (templateType) {
+        case 'text':
+          content = { text: textContent };
+          break;
+        case 'media':
+          content = { url: finalMediaUrl, mediaType, caption };
+          break;
+        case 'button':
+          content = { text: textContent, buttons: buttons.filter(b => b.text.trim()) };
+          break;
+        case 'list':
+          content = { 
+            title: listTitle, 
+            items: listItems.filter(i => i.title.trim()) 
+          };
+          break;
+        case 'location':
+          content = { latitude, longitude, name: locationName };
+          break;
+        case 'contact':
+          content = { name: contactName, phone: contactPhone };
+          break;
       }
-    } else {
-      const { error } = await supabase
-        .from('message_templates')
-        .insert([template]);
 
-      if (error) {
-        console.error('Error creating template:', error);
-        alert('Erro ao criar template');
-        return;
+      const template = {
+        name: templateName,
+        type: templateType,
+        content,
+        user_id: user.id,
+      };
+
+      if (editingTemplate) {
+        console.log('[CreateTemplate] Updating existing template...', { id: editingTemplate.id });
+        const { error } = await supabase
+          .from('message_templates')
+          .update({ ...template, updated_at: new Date().toISOString() })
+          .eq('id', editingTemplate.id);
+
+        if (error) {
+          console.error('Error updating template:', error);
+          alert('Erro ao atualizar template');
+          return;
+        }
+        console.log('[CreateTemplate] Template updated successfully.');
+      } else {
+        console.log('[CreateTemplate] Inserting new template...');
+        const { error } = await supabase
+          .from('message_templates')
+          .insert([{ ...template, sent_count: 0 }]);
+
+        if (error) {
+          console.error('Error creating template:', error);
+          alert('Erro ao criar template');
+          return;
+        }
+        console.log('[CreateTemplate] New template created successfully.');
       }
-    }
 
-    resetForm();
-    setShowCreateModal(false);
-    loadTemplates();
+      resetForm();
+      setShowCreateModal(false);
+      await loadTemplates();
+    } finally {
+      setIsSubmitting(false);
+      console.log('[CreateTemplate] End');
+    }
   };
 
   const handleSendMessage = async () => {
@@ -335,8 +364,14 @@ const Messages: React.FC = () => {
     }
 
     setSending(true);
+    setSendProgress('Iniciando envio...');
+    console.log(`[SendMessage] Start`, { templateId: selectedTemplate.id, instance: selectedInstance, recipient: finalRecipient });
+
     const { data: { user } } = await supabase.auth.getUser();
-    if (!user) return;
+    if (!user) {
+      setSending(false);
+      return;
+    }
 
     const instance = instances.find(i => i.instanceName === selectedInstance);
     if (!instance) {
@@ -344,17 +379,16 @@ const Messages: React.FC = () => {
       setSending(false);
       return;
     }
-
-    let success = false;
-    let errorMessage = '';
-
+    
     try {
       const content = selectedTemplate.content;
+
+      setSendProgress('Enviando para a API...');
+      console.log(`[SendMessage] Calling Evolution API for recipient: ${finalRecipient}`);
 
       switch (selectedTemplate.type) {
         case 'text':
           await sendTextMessage(instance.instanceName, finalRecipient, content.text);
-          success = true;
           break;
         case 'media':
           await sendMediaMessage(
@@ -364,7 +398,6 @@ const Messages: React.FC = () => {
             content.mediaType,
             content.caption
           );
-          success = true;
           break;
         case 'button':
           await sendButtonMessage(
@@ -373,7 +406,6 @@ const Messages: React.FC = () => {
             content.text,
             content.buttons.map((b: any) => ({ displayText: b.text }))
           );
-          success = true;
           break;
         case 'list':
           await sendListMessage(
@@ -382,7 +414,6 @@ const Messages: React.FC = () => {
             content.title,
             content.items.map((i: any) => ({ title: i.title, description: i.description }))
           );
-          success = true;
           break;
         case 'location':
           await sendLocationMessage(
@@ -392,7 +423,6 @@ const Messages: React.FC = () => {
             parseFloat(content.longitude),
             content.name
           );
-          success = true;
           break;
         case 'contact':
           await sendContactMessage(
@@ -401,12 +431,14 @@ const Messages: React.FC = () => {
             content.name,
             content.phone
           );
-          success = true;
           break;
       }
 
+      console.log(`[SendMessage] API call successful.`);
+      setSendProgress('Atualizando estatísticas...');
+
       // Update template sent count
-      await supabase
+      const { error: updateError } = await supabase
         .from('message_templates')
         .update({ 
           sent_count: selectedTemplate.sent_count + 1,
@@ -414,8 +446,12 @@ const Messages: React.FC = () => {
         })
         .eq('id', selectedTemplate.id);
 
+      if (updateError) throw updateError;
+      console.log(`[SendMessage] Stats updated.`);
+      setSendProgress('Salvando no histórico...');
+
       // Save to history
-      await supabase
+      const { error: historyError } = await supabase
         .from('message_send_history')
         .insert([{
           template_id: selectedTemplate.id,
@@ -427,16 +463,17 @@ const Messages: React.FC = () => {
           sent_at: new Date().toISOString()
         }]);
 
+      if (historyError) throw historyError;
+      console.log(`[SendMessage] History saved.`);
+
       alert('Mensagem enviada com sucesso!');
       setShowSendModal(false);
-      setRecipient('');
-      setSelectedGroup('');
-      setSelectedParticipant('');
-      loadTemplates();
-      loadSendHistory();
+      resetSendModalState();
+      await Promise.all([loadTemplates(), loadSendHistory()]);
+
     } catch (error: any) {
-      console.error('Error sending message:', error);
-      errorMessage = error.message || 'Erro desconhecido';
+      console.error('[SendMessage] Failed', error);
+      const errorMessage = error.message || 'Erro desconhecido';
       
       // Save failed attempt to history
       await supabase
@@ -451,11 +488,13 @@ const Messages: React.FC = () => {
           user_id: user.id,
           sent_at: new Date().toISOString()
         }]);
-
+      
       alert('Erro ao enviar mensagem: ' + errorMessage);
-      loadSendHistory();
+      await loadSendHistory();
     } finally {
       setSending(false);
+      setSendProgress('');
+      console.log(`[SendMessage] End`);
     }
   };
 
@@ -535,6 +574,14 @@ const Messages: React.FC = () => {
 
     loadTemplates();
   };
+
+  const resetSendModalState = () => {
+    setSelectedInstance('');
+    setRecipientType('manual');
+    setRecipient('');
+    setSelectedGroup('');
+    setSelectedParticipant('');
+  }
 
   const resetForm = () => {
     setTemplateName('');
@@ -1137,14 +1184,23 @@ const Messages: React.FC = () => {
                   resetForm();
                 }}
                 className="px-4 py-2 text-slate-600 hover:bg-slate-100 rounded-lg transition-colors"
+                disabled={isSubmitting}
               >
                 Cancelar
               </button>
               <button
                 onClick={handleCreateTemplate}
-                className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+                className="w-48 flex items-center justify-center px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors disabled:opacity-75 disabled:cursor-not-allowed"
+                disabled={isSubmitting}
               >
-                {editingTemplate ? 'Atualizar Template' : 'Criar Template'}
+                {isSubmitting ? (
+                  <>
+                    <Loader2 className="animate-spin mr-2" size={16} />
+                    Salvando...
+                  </>
+                ) : (
+                  editingTemplate ? 'Atualizar Template' : 'Criar Template'
+                )}
               </button>
             </div>
           </div>
@@ -1177,19 +1233,30 @@ const Messages: React.FC = () => {
 
               <div>
                 <label className="block text-sm font-medium text-slate-700 mb-2">Instância</label>
-                <select
-                  value={selectedInstance}
-                  onChange={(e) => setSelectedInstance(e.target.value)}
-                  className="w-full p-3 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none"
-                  aria-label="Selecionar instância"
-                >
-                  <option value="">Selecione uma instância</option>
-                  {instances.map((instance) => (
-                    <option key={instance.instanceName} value={instance.instanceName}>
-                      {instance.instanceName}
-                    </option>
-                  ))}
-                </select>
+                {instances.length > 0 ? (
+                  <select
+                    value={selectedInstance}
+                    onChange={(e) => setSelectedInstance(e.target.value)}
+                    className="w-full p-3 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none"
+                    aria-label="Selecionar instância"
+                  >
+                    <option value="">Selecione uma instância</option>
+                    {instances.map((instance) => (
+                      <option key={instance.id} value={instance.instanceName}>
+                        {instance.instanceName}
+                      </option>
+                    ))}
+                  </select>
+                ) : (
+                  <div className="p-3 bg-yellow-50 border border-yellow-200 rounded-lg text-center">
+                    <p className="text-sm text-yellow-800">
+                      Nenhuma instância ativa encontrada.
+                    </p>
+                    <a href="/#/instances" className="text-sm text-blue-600 hover:underline font-medium">
+                      Gerenciar instâncias
+                    </a>
+                  </div>
+                )}
               </div>
 
               {selectedInstance && (
@@ -1326,12 +1393,12 @@ const Messages: React.FC = () => {
               <button
                 onClick={handleSendMessage}
                 disabled={sending}
-                className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+                className="w-48 flex items-center justify-center px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors disabled:opacity-75 disabled:cursor-not-allowed"
               >
                 {sending ? (
                   <>
-                    <Loader2 className="animate-spin" size={16} />
-                    Enviando...
+                    <Loader2 className="animate-spin mr-2" size={16} />
+                    {sendProgress || 'Enviando...'}
                   </>
                 ) : (
                   <>

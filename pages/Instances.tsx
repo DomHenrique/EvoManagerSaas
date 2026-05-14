@@ -2,8 +2,7 @@
  * 🌟 Instances Page — Refatorada com:
  * - Tipagem 100% segura (sem any/alert/@ts-ignore)
  * - Feedback visual elegante (notificações)
- * - Atualização reativa de instâncias via banco de dados
- * - Sincronização periódica com Evolution API
+ * - Carregamento direto da Evolution API
  * - Suporte a todos os modos de conexão (QR, pairingCode)
  * - Copiar pairingCode para celular sem câmera
  * - Prevenção de ações simultâneas
@@ -19,17 +18,9 @@ import {
   createInstance as createInstanceAPI, 
   deleteInstance as deleteInstanceAPI, 
   connectInstance, 
-  logoutInstance 
+  logoutInstance,
+  fetchInstances as fetchInstancesFromAPI
 } from '../services/evolutionApi';
-import { 
-  getInstances,
-  saveInstance,
-  deleteInstance as deleteInstanceDB,
-  syncInstancesFromAPI,
-  startPeriodicSync,
-  stopPeriodicSync
-} from '../services/instanceService';
-import { supabase } from '../services/supabase';
 import { EvoInstance } from '../types';
 
 // Utility para extrair inicial do nome da instância
@@ -111,57 +102,19 @@ const Instances: React.FC = () => {
   const loadInstances = useCallback(async () => {
     setIsLoading(true);
     try {
-      // Get current user
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) {
-        showNotification('User not authenticated', 'error');
-        return;
-      }
-
-      // Load instances from database
-      const data = await getInstances(user.id);
+      // Load instances directly from Evolution API
+      const data = await fetchInstancesFromAPI();
       setInstances(data);
     } catch (error) {
       console.error('Failed to load instances:', error);
-      showNotification('Failed to load instances from database.', 'error');
+      showNotification('Failed to load instances from API.', 'error');
     } finally {
       setIsLoading(false);
     }
   }, [showNotification]);
 
   useEffect(() => {
-    let mounted = true;
-
-    const initializeInstances = async () => {
-      // Get current user
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user || !mounted) return;
-
-      // Load instances from database first (fast)
-      await loadInstances();
-
-      // Trigger initial sync from API (updates database)
-      try {
-        await syncInstancesFromAPI(user.id);
-        // Reload after sync to show updated data
-        if (mounted) {
-          await loadInstances();
-        }
-      } catch (error) {
-        console.error('Initial sync failed:', error);
-      }
-
-      // Start periodic sync (every 60 seconds)
-      startPeriodicSync(user.id, 60000);
-    };
-
-    initializeInstances();
-
-    // Cleanup: stop periodic sync when component unmounts
-    return () => {
-      mounted = false;
-      stopPeriodicSync();
-    };
+    loadInstances();
   }, [loadInstances]);
 
   // ============================================================================
@@ -183,34 +136,14 @@ const Instances: React.FC = () => {
 
     setIsCreating(true);
     try {
-      // Get current user
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) {
-        showNotification('User not authenticated', 'error');
-        return;
-      }
-
       // Create instance via Evolution API
       await createInstanceAPI({
         instanceName: cleanName,
         token: newInstanceToken.trim() || undefined,
-        integration: 'WHATSAPP-BAILEYS',
       });
 
-      // Save to database immediately
-      await saveInstance(user.id, {
-        instanceName: cleanName,
-        status: 'close',
-        integration: 'WHATSAPP-BAILEYS',
-      });
-
-      // Refresh instances from database
+      // Refresh instances from API
       await loadInstances();
-
-      // Trigger immediate sync to get latest status
-      syncInstancesFromAPI(user.id).catch(err => 
-        console.error('Background sync failed:', err)
-      );
 
       showNotification(`Instance "${cleanName}" created successfully!`, 'success');
       setIsModalOpen(false);
@@ -237,20 +170,10 @@ const Instances: React.FC = () => {
     }
 
     try {
-      // Get current user
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) {
-        showNotification('User not authenticated', 'error');
-        return;
-      }
-
       // Delete from Evolution API
       await deleteInstanceAPI(name);
       
-      // Delete from database
-      await deleteInstanceDB(user.id, name);
-      
-      // Refresh instances from database
+      // Refresh instances from API
       await loadInstances();
       
       showNotification(`Instance "${name}" deleted.`, 'info');
@@ -264,22 +187,12 @@ const Instances: React.FC = () => {
     try {
       const result = await connectInstance(name);
 
-      // ✅ Tipagem forte: ConnectResponse da API
       // Evolution API v2.2.3 retorna:
       // - { base64: "data:image/png;base64,..." } → QR
       // - { pairingCode: "123-456-789" } → Pairing via celular
-      // - { status: "open", instance: {...} } → Já conectado
 
-      if (result.status === 'success' && result.instance?.status === 'open') {
-        // Get current user and trigger sync
-        const { data: { user } } = await supabase.auth.getUser();
-        if (user) {
-          await syncInstancesFromAPI(user.id);
-          await loadInstances();
-        }
-        showNotification(`"${name}" is already connected.`, 'info');
-        return;
-      }
+      // Reload instances after connection attempt
+      await loadInstances();
 
       if (result.base64) {
         // QR Code (data:image/png;base64,...)
@@ -319,12 +232,8 @@ const Instances: React.FC = () => {
       // Logout via Evolution API
       await logoutInstance(name);
       
-      // Get current user and trigger immediate sync
-      const { data: { user } } = await supabase.auth.getUser();
-      if (user) {
-        await syncInstancesFromAPI(user.id);
-        await loadInstances();
-      }
+      // Reload instances from API
+      await loadInstances();
       
       showNotification(`"${name}" disconnected.`, 'info');
     } catch (error) {

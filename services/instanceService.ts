@@ -209,7 +209,7 @@ export const saveInstance = async (
  */
 export const getInstances = async (userId: string): Promise<EvoInstance[]> => {
   try {
-    InstanceLogger.debug('getInstances', `Fetching instances for user: ${userId}`);
+    InstanceLogger.info('getInstances', `Fetching instances for user: ${userId}`);
 
     const { data, error } = await supabase
       .from('instances')
@@ -217,19 +217,30 @@ export const getInstances = async (userId: string): Promise<EvoInstance[]> => {
       .eq('user_id', userId)
       .order('created_at', { ascending: false });
 
-    if (error) throw error;
+    if (error) {
+      InstanceLogger.error('getInstances', 'Database query error', error);
+      throw error;
+    }
+
+    InstanceLogger.debug('getInstances', `Raw database response:`, { 
+      recordCount: data?.length || 0,
+      records: data 
+    });
 
     // Map database records to EvoInstance format
     const instances: EvoInstance[] = (data || []).map((record: InstanceRecord) => ({
       instanceName: record.instanceName,
       instanceId: record.instanceId || undefined,
-      status: record.status,
+      status: (record.status as 'open' | 'close' | 'connecting' | 'qrcode'),
       owner: record.owner || undefined,
       profileName: record.profileName || undefined,
       profilePictureUrl: record.profilePictureUrl || undefined,
     }));
 
-    InstanceLogger.info('getInstances', `Found ${instances.length} instances`);
+    InstanceLogger.info('getInstances', `Found ${instances.length} instances`, {
+      instances: instances.map(i => ({ name: i.instanceName, status: i.status }))
+    });
+    
     return instances;
   } catch (error) {
     InstanceLogger.error('getInstances', 'Failed to fetch instances', error);
@@ -274,10 +285,14 @@ export const syncInstancesFromAPI = async (userId: string): Promise<SyncResult> 
   };
 
   try {
-    InstanceLogger.info('syncInstancesFromAPI', 'Starting sync from Evolution API');
+    InstanceLogger.info('syncInstancesFromAPI', `Starting sync from Evolution API for user: ${userId}`);
 
     // Fetch instances from Evolution API
     const apiInstances = await fetchInstancesFromAPI();
+    
+    InstanceLogger.debug('syncInstancesFromAPI', `API returned ${apiInstances.length} instances:`, {
+      instances: apiInstances.map(i => ({ name: i.instanceName, status: i.status }))
+    });
     
     if (!apiInstances || apiInstances.length === 0) {
       InstanceLogger.info('syncInstancesFromAPI', 'No instances found in API');
@@ -294,15 +309,25 @@ export const syncInstancesFromAPI = async (userId: string): Promise<SyncResult> 
       .eq('user_id', userId);
 
     if (fetchError) {
+      InstanceLogger.error('syncInstancesFromAPI', 'Failed to fetch DB instances', fetchError);
       throw fetchError;
     }
 
     const dbInstanceNames = new Set((dbInstances || []).map(i => i.instanceName));
     const apiInstanceNames = new Set(apiInstances.map(i => i.instanceName));
 
+    InstanceLogger.debug('syncInstancesFromAPI', 'Instance comparison:', {
+      dbCount: dbInstanceNames.size,
+      apiCount: apiInstanceNames.size,
+      dbNames: Array.from(dbInstanceNames),
+      apiNames: Array.from(apiInstanceNames)
+    });
+
     // Sync each API instance to database
     for (const apiInstance of apiInstances) {
       try {
+        InstanceLogger.debug('syncInstancesFromAPI', `Syncing instance: ${apiInstance.instanceName}`);
+        
         await saveInstance(userId, {
           instanceName: apiInstance.instanceName,
           instanceId: apiInstance.instanceId || null,
@@ -313,6 +338,8 @@ export const syncInstancesFromAPI = async (userId: string): Promise<SyncResult> 
           integration: 'WHATSAPP-BAILEYS',
         });
         result.synced++;
+        
+        InstanceLogger.debug('syncInstancesFromAPI', `✅ Synced: ${apiInstance.instanceName}`);
       } catch (error: any) {
         const errorMsg = `Failed to sync ${apiInstance.instanceName}: ${error.message}`;
         InstanceLogger.error('syncInstancesFromAPI', errorMsg, error);
@@ -322,6 +349,10 @@ export const syncInstancesFromAPI = async (userId: string): Promise<SyncResult> 
 
     // Remove instances from DB that no longer exist in API
     const instancesToRemove = [...dbInstanceNames].filter(name => !apiInstanceNames.has(name));
+    
+    if (instancesToRemove.length > 0) {
+      InstanceLogger.info('syncInstancesFromAPI', `Removing ${instancesToRemove.length} deleted instances`);
+    }
     
     for (const instanceName of instancesToRemove) {
       try {
@@ -335,7 +366,10 @@ export const syncInstancesFromAPI = async (userId: string): Promise<SyncResult> 
     }
 
     result.success = result.errors.length === 0;
-    InstanceLogger.info('syncInstancesFromAPI', `Sync completed: ${result.synced} synced, ${result.errors.length} errors`);
+    InstanceLogger.info('syncInstancesFromAPI', `Sync completed: ${result.synced} synced, ${result.errors.length} errors`, {
+      synced: result.synced,
+      errors: result.errors
+    });
     
     return result;
   } catch (error: any) {
