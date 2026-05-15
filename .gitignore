@@ -60,14 +60,13 @@ pids
 debug.log
 *.log
 
-# Testing
+# Testing and Scripts
 junit.xml
 coverage.xml
-test-dashboard-data.ts
-test-evolution-api.ts
-test-supabase-save.ts
-test-supabase-fetch.ts
-test-dashboard-presentation.ts
+test-*.ts
+temp-*.js
+*-test.js
+simple-test.ts
 
 # Production
 public/vite.svg

@@ -24,6 +24,7 @@ import {
 } from 'lucide-react';
 import { supabase } from '../services/supabase';
 import { sendTextMessage, sendMediaMessage, sendButtonMessage, sendListMessage, sendLocationMessage, sendContactMessage, fetchGroups } from '../services/evolutionApi';
+import instanceService from '../services/instanceService';
 import { EvoInstance, EvoGroup } from '../types';
 
 interface MessageTemplate {
@@ -169,6 +170,14 @@ const Messages: React.FC = () => {
     if (!user) {
       console.warn('[LoadInstances] No user found.');
       return;
+    }
+
+    try {
+      // Sync instances from API to the DB to ensure new instances are available
+      console.log('[LoadInstances] Syncing instances with API...');
+      await instanceService.syncInstancesFromAPI(user.id);
+    } catch (syncError) {
+      console.error('[LoadInstances] Error during instances sync:', syncError);
     }
 
     const { data, error } = await supabase

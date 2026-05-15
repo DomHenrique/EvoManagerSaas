@@ -7,6 +7,12 @@ INSERT INTO storage.buckets (id, name, public)
 VALUES ('message-media', 'message-media', true)
 ON CONFLICT (id) DO NOTHING;
 
+-- Garantir que as políticas antigas sejam removidas antes de criar (evita erros ao rodar novamente)
+DROP POLICY IF EXISTS "Users can upload their own media files" ON storage.objects;
+DROP POLICY IF EXISTS "Public can view media files" ON storage.objects;
+DROP POLICY IF EXISTS "Users can delete their own media files" ON storage.objects;
+DROP POLICY IF EXISTS "Users can update their own media files" ON storage.objects;
+
 -- Criar política para permitir upload de arquivos
 CREATE POLICY "Users can upload their own media files"
 ON storage.objects FOR INSERT
@@ -39,8 +45,7 @@ USING (
 -- ============================================================================
 -- COMENTÁRIOS E DOCUMENTAÇÃO
 -- ============================================================================
-
-COMMENT ON TABLE storage.buckets IS 'Buckets de armazenamento do Supabase Storage';
+-- (Comando 'COMMENT ON TABLE' removido para evitar erro de permissão)
 
 -- Estrutura de pastas no bucket:
 -- message-media/

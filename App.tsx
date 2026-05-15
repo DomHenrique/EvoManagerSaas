@@ -2,6 +2,7 @@
 import React, { useEffect, useState } from 'react';
 import { HashRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
 import { supabase } from './services/supabase';
+import instanceService from './services/instanceService';
 import Layout from './components/Layout';
 import Dashboard from './pages/Dashboard';
 import Instances from './pages/Instances';
@@ -23,12 +24,20 @@ const App: React.FC = () => {
     supabase.auth.getSession().then(({ data: { session } }) => {
       setSession(session);
       setLoading(false);
+      if (session?.user) {
+        instanceService.startPeriodicSync(session.user.id);
+      }
     });
 
     const {
       data: { subscription },
     } = supabase.auth.onAuthStateChange((_event, session) => {
       setSession(session);
+      if (session?.user) {
+        instanceService.startPeriodicSync(session.user.id);
+      } else {
+        instanceService.stopPeriodicSync();
+      }
     });
 
     return () => subscription.unsubscribe();

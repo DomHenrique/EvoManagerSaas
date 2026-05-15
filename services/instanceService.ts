@@ -21,12 +21,12 @@ import { EvoInstance } from '../types';
 
 interface InstanceRecord {
   id?: string;
-  instanceName: string;
-  instanceId?: string | null;
+  instancename: string;
+  instanceid?: string | null;
   status: string;
   owner?: string | null;
-  profileName?: string | null;
-  profilePictureUrl?: string | null;
+  profilename?: string | null;
+  profilepictureurl?: string | null;
   user_id: string;
   integration?: string;
   qrcode?: string | null;
@@ -128,7 +128,15 @@ class SyncManager {
  */
 export const saveInstance = async (
   userId: string,
-  instanceData: Partial<InstanceRecord>
+  instanceData: {
+    instanceName: string;
+    instanceId?: string | null;
+    status: string;
+    owner?: string | null;
+    profileName?: string | null;
+    profilePictureUrl?: string | null;
+    integration?: string;
+  }
 ): Promise<InstanceRecord | null> => {
   try {
     if (!instanceData.instanceName) {
@@ -142,7 +150,7 @@ export const saveInstance = async (
       .from('instances')
       .select('*')
       .eq('user_id', userId)
-      .eq('instanceName', instanceData.instanceName)
+      .eq('instancename', instanceData.instanceName)
       .single();
 
     if (fetchError && fetchError.code !== 'PGRST116') { // PGRST116 = no rows returned
@@ -151,7 +159,13 @@ export const saveInstance = async (
 
     const now = new Date().toISOString();
     const record: Partial<InstanceRecord> = {
-      ...instanceData,
+      instancename: instanceData.instanceName,
+      instanceid: instanceData.instanceId,
+      status: instanceData.status,
+      owner: instanceData.owner,
+      profilename: instanceData.profileName,
+      profilepictureurl: instanceData.profilePictureUrl,
+      integration: instanceData.integration,
       user_id: userId,
       updated_at: now,
     };
@@ -229,12 +243,12 @@ export const getInstances = async (userId: string): Promise<EvoInstance[]> => {
 
     // Map database records to EvoInstance format
     const instances: EvoInstance[] = (data || []).map((record: InstanceRecord) => ({
-      instanceName: record.instanceName,
-      instanceId: record.instanceId || undefined,
+      instanceName: record.instancename,
+      instanceId: record.instanceid || undefined,
       status: (record.status as 'open' | 'close' | 'connecting' | 'qrcode'),
       owner: record.owner || undefined,
-      profileName: record.profileName || undefined,
-      profilePictureUrl: record.profilePictureUrl || undefined,
+      profileName: record.profilename || undefined,
+      profilePictureUrl: record.profilepictureurl || undefined,
     }));
 
     InstanceLogger.info('getInstances', `Found ${instances.length} instances`, {
@@ -262,7 +276,7 @@ export const deleteInstance = async (
       .from('instances')
       .delete()
       .eq('user_id', userId)
-      .eq('instanceName', instanceName);
+      .eq('instancename', instanceName);
 
     if (error) throw error;
 
@@ -305,7 +319,7 @@ export const syncInstancesFromAPI = async (userId: string): Promise<SyncResult> 
     // Get current instances from database
     const { data: dbInstances, error: fetchError } = await supabase
       .from('instances')
-      .select('instanceName')
+      .select('instancename')
       .eq('user_id', userId);
 
     if (fetchError) {
@@ -313,7 +327,7 @@ export const syncInstancesFromAPI = async (userId: string): Promise<SyncResult> 
       throw fetchError;
     }
 
-    const dbInstanceNames = new Set((dbInstances || []).map(i => i.instanceName));
+    const dbInstanceNames = new Set((dbInstances || []).map(i => i.instancename));
     const apiInstanceNames = new Set(apiInstances.map(i => i.instanceName));
 
     InstanceLogger.debug('syncInstancesFromAPI', 'Instance comparison:', {
